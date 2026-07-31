@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 RunStatus = Literal["running", "succeeded", "failed", "max_steps"]
 
@@ -47,6 +46,7 @@ class ModelRequest:
     messages: tuple[dict[str, Any], ...]
     tools: tuple[dict[str, Any], ...]
     thinking_enabled: bool = True
+    max_output_tokens: int = 4_096
 
 
 @dataclass(frozen=True)
@@ -73,13 +73,6 @@ class ToolSpec:
                 "parameters": self.parameters_schema,
             },
         }
-
-
-@dataclass(frozen=True)
-class ToolContext:
-    session_id: str
-    run_id: str
-    connection: sqlite3.Connection
 
 
 @dataclass(frozen=True)
@@ -112,6 +105,27 @@ class Todo:
     created_at: str
 
 
+class TodoStore(Protocol):
+    """Session-bound capability exposed only to the todo tool."""
+
+    def add(
+        self,
+        content: str,
+        source_tool_call_id: str,
+    ) -> tuple[Todo, bool]:
+        ...
+
+    def list(self) -> list[Todo]:
+        ...
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    session_id: str
+    run_id: str
+    todo_store: TodoStore | None = None
+
+
 @dataclass(frozen=True)
 class TraceEvent:
     run_id: str
@@ -142,4 +156,3 @@ class CompactionResult:
     after_tokens: int
     compacted_through_seq: int
     reason: str | None = None
-

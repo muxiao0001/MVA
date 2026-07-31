@@ -151,6 +151,12 @@ class MessageRepository:
         tool_name: str | None = None,
         connection: sqlite3.Connection,
     ) -> StoredMessage:
+        owner = connection.execute(
+            "SELECT 1 FROM runs WHERE id = ? AND session_id = ?",
+            (run_id, session_id),
+        ).fetchone()
+        if owner is None:
+            raise StorageError("Message 的 run_id 与 session_id 不匹配")
         row = connection.execute(
             "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq "
             "FROM messages WHERE session_id = ?",
@@ -283,6 +289,7 @@ class RunRepository:
         self,
         *,
         run_id: str,
+        session_id: str,
         status: str,
         step_count: int,
         stop_reason: str,
@@ -296,6 +303,7 @@ class RunRepository:
             self._finish(
                 connection=connection,
                 run_id=run_id,
+                session_id=session_id,
                 status=status,
                 step_count=step_count,
                 stop_reason=stop_reason,
@@ -307,6 +315,7 @@ class RunRepository:
             self._finish(
                 connection=owned,
                 run_id=run_id,
+                session_id=session_id,
                 status=status,
                 step_count=step_count,
                 stop_reason=stop_reason,
@@ -319,6 +328,7 @@ class RunRepository:
         *,
         connection: sqlite3.Connection,
         run_id: str,
+        session_id: str,
         status: str,
         step_count: int,
         stop_reason: str,
@@ -330,7 +340,7 @@ class RunRepository:
             UPDATE runs
             SET status = ?, step_count = ?, stop_reason = ?,
                 error_code = ?, context_valid = ?, finished_at = ?
-            WHERE id = ? AND status = 'running'
+            WHERE id = ? AND session_id = ? AND status = 'running'
             """,
             (
                 status,
@@ -340,20 +350,49 @@ class RunRepository:
                 1 if context_valid else 0,
                 utc_now(),
                 run_id,
+                session_id,
             ),
         )
         if cursor.rowcount != 1:
             raise StorageError(f"Run 已结束或不存在: {run_id}")
 
-    def get(self, run_id: str) -> dict[str, Any]:
+    def get(self, session_id: str, run_id: str) -> dict[str, Any]:
         with self.database.connection() as connection:
             row = connection.execute(
-                "SELECT * FROM runs WHERE id = ?",
-                (run_id,),
+                "SELECT * FROM runs WHERE id = ? AND session_id = ?",
+                (run_id, session_id),
             ).fetchone()
         if row is None:
             raise StorageError(f"Run 不存在: {run_id}")
         return dict(row)
+
+    def recover_interrupted(self, session_id: str) -> list[str]:
+        """Quarantine stale runs before starting a new run in this session."""
+
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """
+                SELECT id FROM runs
+                WHERE session_id = ? AND status = 'running'
+                ORDER BY started_at, id
+                """,
+                (session_id,),
+            ).fetchall()
+            run_ids = [str(row["id"]) for row in rows]
+            if run_ids:
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = 'failed',
+                        stop_reason = 'interrupted',
+                        error_code = 'run_interrupted',
+                        context_valid = 0,
+                        finished_at = ?
+                    WHERE session_id = ? AND status = 'running'
+                    """,
+                    (utc_now(), session_id),
+                )
+        return run_ids
 
 
 class TodoRepository:
@@ -441,6 +480,40 @@ class TodoRepository:
         )
 
 
+class SessionTodoStore:
+    """Narrow todo capability bound to one session and one transaction."""
+
+    __slots__ = ("__repository", "__session_id", "__connection")
+
+    def __init__(
+        self,
+        repository: TodoRepository,
+        session_id: str,
+        connection: sqlite3.Connection,
+    ) -> None:
+        self.__repository = repository
+        self.__session_id = session_id
+        self.__connection = connection
+
+    def add(
+        self,
+        content: str,
+        source_tool_call_id: str,
+    ) -> tuple[Todo, bool]:
+        return self.__repository.add(
+            self.__session_id,
+            content,
+            source_tool_call_id,
+            connection=self.__connection,
+        )
+
+    def list(self) -> list[Todo]:
+        return self.__repository.list(
+            self.__session_id,
+            connection=self.__connection,
+        )
+
+
 class TraceRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -451,6 +524,15 @@ class TraceRepository:
         *,
         connection: sqlite3.Connection | None = None,
     ) -> None:
+        def _append(target: sqlite3.Connection) -> None:
+            owner = target.execute(
+                "SELECT 1 FROM runs WHERE id = ? AND session_id = ?",
+                (event.run_id, event.session_id),
+            ).fetchone()
+            if owner is None:
+                raise StorageError("Trace 的 run_id 与 session_id 不匹配")
+            target.execute(sql, values)
+
         values = (
             event.run_id,
             event.session_id,
@@ -469,10 +551,10 @@ class TraceRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         if connection is not None:
-            connection.execute(sql, values)
+            _append(connection)
         else:
             with self.database.transaction() as owned:
-                owned.execute(sql, values)
+                _append(owned)
 
     def list(
         self,

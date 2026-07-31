@@ -27,7 +27,7 @@
 
 问题：若先提交 todo，再保存 tool result，第二步失败会导致模型认为工具失败，但待办实际已新增。
 
-处理：Runtime 为每个工具调用开启 SQLite 事务，把 `ToolContext` 限定在该连接上；todo 写入、tool result 消息和工具 trace 同时提交或同时回滚。
+处理：Runtime 为每个工具调用开启 SQLite 事务，但不把 connection 交给工具。`todo` 只获得绑定当前 session 与当前事务的 `SessionTodoStore.add/list`；todo 写入、tool result 消息和工具 trace 同时提交或同时回滚。
 
 ## 4. 防止副作用重复
 
@@ -68,10 +68,25 @@
 
 处理：项目仍保留标准 `pyproject.toml` 和可编辑安装入口；本机验证使用 `PYTHONPATH=src`，不强行突破环境管理策略，也不引入第三方依赖。
 
-## 9. 验证结果
+## 9. P0 安全审查整改
+
+问题：正常业务闭环完成后，安全审查仍复现了中断 run 污染 session、工具获得原始数据库连接、摘要提升到 system、缺少资源预算、最后一步继续执行副作用、API Key 可发往任意 Base URL、trace 复制自由文本秘密、截断答案误判成功和数据库文件为 `0644`。
+
+处理：
+
+- 每个新 run 前，将同 session 遗留的 `running` run 标记为 `failed/interrupted` 并设置 `context_valid=0`；
+- `ToolContext` 只暴露最小能力，`RunRepository.get/finish`、message 和 trace 写入同时校验 `session_id` 与 `run_id`；
+- 固定 system prompt 与非可信历史摘要分离，摘要作为标注后的 `user` memory 消息；
+- 增加用户输入、hard context、单响应/单 run 工具数、工具参数、模型输出 token/字符和 HTTP 响应字节预算；
+- 最后一个模型步骤若仍要求工具，不保存该工具请求、不执行副作用，直接以 `max_steps` 结束；
+- Base URL 默认限制为 DeepSeek 官方 HTTPS 地址；显式允许代理时仍拒绝 HTTP、URL 凭据、query 与 fragment；
+- 工具 trace 只记录名称、call ID 短哈希、长度和状态，不复制参数与结果正文；
+- 只有 `stop` 和 `tool_calls` 是正常结束原因，`length` 使用 `model_output_truncated` 失败；
+- 应用创建的数据库目录使用 `0700`、数据库文件使用 `0600`，并拒绝数据库文件符号链接。
+
+## 10. 验证结果
 
 - `python -m compileall -q src acceptance`：通过；
-- `python acceptance/run_all.py`：TC-01 至 TC-17 全部通过；
+- `python acceptance/run_all.py`：TC-01 至 TC-20 全部通过；
 - CLI session 创建、列表和恢复入口：通过；
-- 真实 API 冒烟：脚本已提供；只有存在 `DEEPSEEK_API_KEY` 时执行，否则安全跳过。
-
+- 真实 API 冒烟：脚本已提供并覆盖直接回答、calculator 与工具型追问；只有存在 `DEEPSEEK_API_KEY` 时执行，否则安全跳过。

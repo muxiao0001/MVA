@@ -13,6 +13,11 @@ _ERROR_HINTS = {
     "model_service_error": "模型服务暂时不可用，请稍后重试。",
     "model_request_error": "模型拒绝了请求，请检查模型名与 Base URL。",
     "model_protocol_error": "模型返回格式异常，本次任务已安全终止。",
+    "model_output_truncated": "模型回答被截断，未将部分内容当作完整答案。",
+    "model_response_too_large": "模型响应超过本地安全上限，本次任务已终止。",
+    "input_validation_error": "输入不符合要求，请缩短内容后重试。",
+    "context_overflow": "当前上下文超过安全上限，请新建 session 或缩短输入。",
+    "tool_budget_exceeded": "模型请求的工具调用超过本次 run 的安全预算。",
     "storage_error": "本地存储失败，请检查数据库路径与文件权限。",
     "max_steps": "达到轮次上限，本次任务未完成。",
     "internal_error": "发生未预期错误；可通过 trace 定位。",
@@ -51,4 +56,3 @@ def present_traces(events: list[dict]) -> str:
         json.dumps(event, ensure_ascii=False, sort_keys=True)
         for event in events
     )
-

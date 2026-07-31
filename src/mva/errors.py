@@ -17,6 +17,10 @@ class ConfigurationError(MVAError):
     code = "configuration_error"
 
 
+class InputValidationError(MVAError):
+    code = "input_validation_error"
+
+
 class SessionNotFoundError(MVAError):
     code = "session_not_found"
 
@@ -55,10 +59,25 @@ class ModelProtocolError(ModelError):
     code = "model_protocol_error"
 
 
+class ModelOutputTruncatedError(ModelError):
+    code = "model_output_truncated"
+
+
+class ModelResponseTooLargeError(ModelError):
+    code = "model_response_too_large"
+
+
+class ContextOverflowError(MVAError):
+    code = "context_overflow"
+
+
+class ToolBudgetExceededError(MVAError):
+    code = "tool_budget_exceeded"
+
+
 class ToolRegistrationError(MVAError):
     code = "tool_registration_error"
 
 
 class ToolValidationError(MVAError):
     code = "tool_validation_error"
-

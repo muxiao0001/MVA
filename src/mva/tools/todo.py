@@ -3,14 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain.models import ToolContext, ToolResult, ToolSpec
-from ..storage.repositories import TodoRepository
 from .base import Tool
 
 
 class TodoTool(Tool):
-    def __init__(self, repository: TodoRepository) -> None:
-        self.repository = repository
-
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -46,6 +42,14 @@ class TodoTool(Tool):
         tool_call_id: str,
     ) -> ToolResult:
         operation = arguments["operation"]
+        if context.todo_store is None:
+            return ToolResult(
+                tool_call_id=tool_call_id,
+                tool_name=self.spec.name,
+                ok=False,
+                error_type="tool_permission_error",
+                error_message="todo 工具没有获得当前 session 的存储能力",
+            )
         if operation == "add":
             content = arguments.get("content")
             if not isinstance(content, str) or not content.strip():
@@ -56,11 +60,9 @@ class TodoTool(Tool):
                     error_type="missing_content",
                     error_message="todo add 必须提供非空 content",
                 )
-            todo, created = self.repository.add(
-                context.session_id,
+            todo, created = context.todo_store.add(
                 content.strip(),
                 tool_call_id,
-                connection=context.connection,
             )
             return ToolResult(
                 tool_call_id=tool_call_id,
@@ -77,10 +79,7 @@ class TodoTool(Tool):
                 },
             )
 
-        todos = self.repository.list(
-            context.session_id,
-            connection=context.connection,
-        )
+        todos = context.todo_store.list()
         return ToolResult(
             tool_call_id=tool_call_id,
             tool_name=self.spec.name,
@@ -94,4 +93,3 @@ class TodoTool(Tool):
                 ],
             },
         )
-

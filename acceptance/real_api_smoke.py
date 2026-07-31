@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -21,18 +22,9 @@ def main() -> int:
         return 0
 
     with tempfile.TemporaryDirectory(prefix="mva-real-smoke-") as directory:
-        settings = Settings(
-            api_key=api_key,
-            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-            model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+        settings = replace(
+            Settings.from_env(),
             database_path=Path(directory) / "agent.db",
-            max_steps=8,
-            context_token_threshold=12_000,
-            context_retain_runs=4,
-            api_max_retries=2,
-            api_retry_base_seconds=1.2,
-            model_timeout_seconds=90,
-            thinking_enabled=True,
         )
         app = build_application(settings)
         session = app.sessions.create("real-api-smoke")
@@ -67,9 +59,29 @@ def main() -> int:
             print("[FAIL] 模型未自主调用 calculator。")
             return 1
         print(f"[PASS] calculator 工具链: {calculated.answer}")
+
+        follow_up = app.runtime.run(
+            session.id,
+            "基于刚才的计算结果，请再次使用 calculator 加 1，并报告结果。",
+        )
+        if follow_up.status != "succeeded":
+            print(f"[FAIL] 工具型追问失败: {follow_up.error_code}")
+            return 1
+        follow_up_events = app.traces.list(
+            session_id=session.id,
+            run_id=follow_up.run_id,
+        )
+        if not any(
+            event["event_type"] == "tool_execution"
+            and event["payload"].get("tool_name") == "calculator"
+            and event["status"] == "ok"
+            for event in follow_up_events
+        ):
+            print("[FAIL] 工具型追问未再次自主调用 calculator。")
+            return 1
+        print(f"[PASS] 工具型追问: {follow_up.answer}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

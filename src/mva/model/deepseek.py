@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from ..config import validate_base_url
 from ..domain.models import ModelRequest, ModelResponse, ToolCall
 from ..errors import (
     ConfigurationError,
@@ -14,6 +15,7 @@ from ..errors import (
     ModelProtocolError,
     ModelRateLimitError,
     ModelRequestError,
+    ModelResponseTooLargeError,
     ModelServiceError,
 )
 
@@ -31,12 +33,15 @@ class DeepSeekClient:
         timeout_seconds: float = 90.0,
         max_retries: int = 2,
         retry_base_seconds: float = 1.2,
+        allow_custom_base_url: bool = False,
+        max_response_bytes: int = 2_000_000,
     ) -> None:
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.base_url = validate_base_url(base_url, allow_custom_base_url)
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.retry_base_seconds = retry_base_seconds
+        self.max_response_bytes = max_response_bytes
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         if not self.api_key:
@@ -55,6 +60,7 @@ class DeepSeekClient:
             "thinking": {
                 "type": "enabled" if request.thinking_enabled else "disabled"
             },
+            "max_tokens": request.max_output_tokens,
         }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         http_request = urllib.request.Request(
@@ -74,7 +80,21 @@ class DeepSeekClient:
                     http_request,
                     timeout=self.timeout_seconds,
                 ) as response:
-                    raw = response.read()
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        try:
+                            declared_length = int(content_length)
+                        except ValueError:
+                            declared_length = 0
+                        if declared_length > self.max_response_bytes:
+                            raise ModelResponseTooLargeError(
+                                "模型响应超过允许的字节上限"
+                            )
+                    raw = response.read(self.max_response_bytes + 1)
+                    if len(raw) > self.max_response_bytes:
+                        raise ModelResponseTooLargeError(
+                            "模型响应超过允许的字节上限"
+                        )
                 return self._parse_response(raw)
             except urllib.error.HTTPError as exc:
                 error = self._http_error(exc)
@@ -176,4 +196,3 @@ class DeepSeekClient:
             f"DeepSeek 拒绝了请求（HTTP {exc.code}）",
             detail=detail,
         )
-

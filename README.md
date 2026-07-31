@@ -4,14 +4,14 @@
 
 ## 已实现能力
 
-- 自建 Agent loop：直接回答、单工具、多工具连续调用，最多 8 次模型调用；
+- 自建 Agent loop：直接回答、单工具、多工具连续调用，最多 8 次模型调用；最后一个步骤不会再执行工具副作用；
 - 统一工具注册：`calculator`、固定 Mock `search`、session 级 `todo`；
 - DeepSeek thinking + tool call 协议：工具轮的 `reasoning_content` 只在内部保存和续传；
-- 多 session 创建、列表、恢复、隔离，退出进程后仍可继续；
-- SQLite 分层保存完整消息、滚动摘要、todo、run 与 trace；
-- 约 4 字符/token 的上下文估算，超过阈值后只压缩已闭合 run；
-- API、模型协议、工具、存储与轮次上限的明确终止；
-- 17 个不依赖测试框架的确定性验收场景，以及独立真实 API 冒烟脚本。
+- 多 session 创建、列表、恢复、隔离；新 run 会隔离上次异常退出留下的未完成 run；
+- SQLite 分层保存完整消息、滚动摘要、todo、run 与 trace；应用创建的数据库文件收紧为 `0600`；
+- 约 4 字符/token 的上下文估算，超过阈值后只压缩已闭合 run，超过 hard limit 时拒绝发送；
+- API、模型协议、工具、存储、资源预算与轮次上限的明确终止；
+- 20 个不依赖测试框架的确定性验收场景，以及独立真实 API 冒烟脚本。
 
 核心 Runtime 没有使用 LangGraph、OpenHands、OpenClaw、Agents SDK、AutoGen 或 Pydantic AI。项目也没有运行时第三方依赖；HTTP、SQLite、AST 和 CLI 均使用 Python 标准库。
 
@@ -35,10 +35,12 @@ export PYTHONPATH=src
 ```bash
 export DEEPSEEK_API_KEY='your-key'
 export DEEPSEEK_BASE_URL='https://api.deepseek.com'
-export DEEPSEEK_MODEL='deepseek-v4-pro'
+export DEEPSEEK_MODEL='deepseek-v4-flash'
 ```
 
 不要提交 `.env`、数据库或真实 API Key。
+
+默认只允许 `https://api.deepseek.com` 接收 API Key。确需使用兼容代理时，必须同时设置 `MVA_ALLOW_CUSTOM_BASE_URL=true`；自定义地址仍强制 HTTPS，且不得包含 URL 凭据、query 或 fragment。
 
 ## CLI
 
@@ -80,9 +82,11 @@ CLI
 2. 调用模型并解析 `content`、`tool_calls`、`reasoning_content`、`finish_reason`；
 3. 没有工具调用且有有效内容时结束；
 4. 有工具调用时，按顺序校验和执行，将每个结果用相同 call ID 回传，再继续模型循环；
-5. 非法输出、服务错误、存储错误或达到上限时进入明确终态。
+5. 非法输出、截断回答、资源超限、服务错误、存储错误或达到上限时进入明确终态。
 
 同一模型响应的多个工具调用在 P0 中串行执行。todo 副作用和对应 tool result 在同一个 SQLite 事务内提交，避免“待办已新增但模型收到失败”。重复的开放待办会返回 `created=false`，不会静默创建副本。
+
+如果进程在 run 中途退出，下次向同一 session 发起请求前，遗留的 `running` run 会被标记为 `failed/interrupted` 且从后续 context 隔离。该策略保证 session 可继续使用，但不会自动重放可能已发生的工具副作用。
 
 ## Session、context 与 memory
 
@@ -91,7 +95,7 @@ CLI
 | 状态 | 保存位置 | 召回时机 | 放入模型 context |
 |---|---|---|---|
 | 完整对话与工具协议消息 | `messages` | 每次模型调用前 | 只放摘要游标之后的消息 |
-| 滚动会话摘要 | `sessions.summary` | 每次模型调用前 | 合并到 system prompt 的 `<session_summary>` |
+| 滚动会话摘要 | `sessions.summary` | 每次模型调用前 | 作为明确标注的非可信 `user` memory 消息；不会进入 system prompt |
 | todo 业务状态 | `todos` | 模型调用 `todo list` 时 | 不自动塞历史，以工具查询结果为准 |
 | run/trace | `runs`、`trace_events` | 调试与验收时 | 不放入模型 context |
 
@@ -102,6 +106,7 @@ CLI
 默认参数：
 
 - `MVA_CONTEXT_TOKEN_THRESHOLD=12000`
+- `MVA_HARD_CONTEXT_TOKEN_LIMIT=64000`
 - `MVA_CONTEXT_RETAIN_RUNS=4`
 - 估算规则：约 4 字符/token，加消息和工具 Schema 固定开销；
 - 滚动摘要最大约 6,000 字符；
@@ -128,11 +133,13 @@ export MVA_CONTEXT_RETAIN_RUNS=2
 
 `ToolRegistry` 在执行前拒绝未知工具、畸形 JSON、非 object 参数和不符合本项目 Schema 子集的参数。`calculator` 只解释白名单 AST 节点，不执行 `eval`；`search` 的每次输出均带 Mock 声明；`todo` 只能访问当前 session 的 repository。
 
+`ToolContext` 不暴露 SQLite connection。普通工具只能得到 session/run 标识；`todo` 额外得到绑定当前 session 和当前事务的 `SessionTodoStore.add/list` 窄能力，不能查询其他 session。
+
 ## Trace 与异常
 
-Trace 至少包含 run/session ID、步骤、事件类型、工具名、状态、耗时、错误类型和终止原因。API Key、authorization、password、secret、token 与 `reasoning_content` 字段会递归脱敏；模型的私有推理不会进入 CLI 或 trace。
+Trace 至少包含 run/session ID、步骤、事件类型、工具名、状态、耗时、错误类型和终止原因。工具事件只记录 call ID 的短哈希、参数/结果长度与成功状态，不保存原始参数或结果；模型的私有推理不会进入 CLI 或 trace。
 
-API 错误被分类为配置、鉴权、余额、限流、请求和服务错误。429/500/502/503/504 与网络失败最多自动重试 2 次，退避为 1.2s、2.4s；400/401/402/422 等不可恢复请求不会反复重试。
+API 错误被分类为配置、鉴权、余额、限流、请求、响应过大和服务错误。429/500/502/503/504 与网络失败最多自动重试 2 次，退避为 1.2s、2.4s；400/401/402/422 等不可恢复请求不会反复重试。`finish_reason=length` 不会被当作成功答案。
 
 ## 验收
 
@@ -142,7 +149,7 @@ API 错误被分类为配置、鉴权、余额、限流、请求和服务错误�
 python acceptance/run_all.py
 ```
 
-覆盖 TC-01 至 TC-17：直接回答、三种工具、持久化与隔离、两类追问、多工具链、非法调用、API/工具异常、最大轮次、context 压缩、工具消息配对、推理隐私和 trace 完整性。结果同时写到被 Git 忽略的 `acceptance/results/latest.json`。
+覆盖 TC-01 至 TC-20：原有核心业务场景，以及异常 run 恢复、最小工具权限、跨 session repository 边界、Base URL 出站限制、trace 内容最小化、数据库权限、输入/context/tool/HTTP/模型输出预算和截断终止。结果同时写到被 Git 忽略的 `acceptance/results/latest.json`。
 
 真实 API 冒烟与确定性验收分开：
 
@@ -150,7 +157,7 @@ python acceptance/run_all.py
 python acceptance/real_api_smoke.py
 ```
 
-未设置 `DEEPSEEK_API_KEY` 时脚本安全跳过；设置后会用 `deepseek-v4-pro` 验证一次直接回答和一次模型自主 calculator 工具链。
+未设置 `DEEPSEEK_API_KEY` 时脚本安全跳过；设置后会用当前配置的模型验证直接回答、模型自主 calculator 工具链和一次带历史工具结果的工具型追问。脚本使用临时 `0600` SQLite 数据库，不打印密钥。
 
 ## 录屏建议
 
@@ -160,7 +167,7 @@ python acceptance/real_api_smoke.py
 4. 退出后重新启动，恢复一个 session；
 5. 调低压缩阈值，连续对话后追问早期事实；
 6. 展示缺失密钥或非法计算，以及对应 `traces`；
-7. 运行 `python acceptance/run_all.py` 展示 17/17。
+7. 运行 `python acceptance/run_all.py` 展示 20/20。
 
 ## 配置项
 
@@ -168,11 +175,21 @@ python acceptance/real_api_smoke.py
 |---|---|
 | `DEEPSEEK_API_KEY` | 无，必须外部提供 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
-| `DEEPSEEK_MODEL` | `deepseek-v4-pro` |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` |
+| `MVA_ALLOW_CUSTOM_BASE_URL` | `false` |
+| `MVA_THINKING_ENABLED` | `true` |
 | `MVA_DB_PATH` | `var/agent.db` |
 | `MVA_MAX_STEPS` | `8` |
+| `MVA_MAX_USER_INPUT_CHARS` | `20000` |
 | `MVA_CONTEXT_TOKEN_THRESHOLD` | `12000` |
+| `MVA_HARD_CONTEXT_TOKEN_LIMIT` | `64000` |
 | `MVA_CONTEXT_RETAIN_RUNS` | `4` |
+| `MVA_MAX_TOOL_CALLS_PER_RESPONSE` | `4` |
+| `MVA_MAX_TOOL_CALLS_PER_RUN` | `8` |
+| `MVA_MAX_TOOL_ARGUMENTS_CHARS` | `16000` |
+| `MVA_MAX_MODEL_OUTPUT_TOKENS` | `4096` |
+| `MVA_MAX_MODEL_OUTPUT_CHARS` | `200000` |
+| `MVA_MAX_HTTP_RESPONSE_BYTES` | `2000000` |
 | `MVA_API_MAX_RETRIES` | `2` |
 | `MVA_API_RETRY_BASE_SECONDS` | `1.2` |
 | `MVA_MODEL_TIMEOUT_SECONDS` | `90` |
@@ -180,11 +197,14 @@ python acceptance/real_api_smoke.py
 ## 当前边界
 
 - 单 Agent、文本 CLI、本地部署；
+- 不提供用户认证；session ID 不是访问令牌，安全边界是运行程序的本机账号；
 - 不提供真实联网搜索、Web、多 Agent、RAG 或跨 session 记忆；
 - todo 仅新增和查看；
 - 不承诺两个进程同时写同一 session；
-- `reasoning_content` 为满足工具协议而明文保存在本地 SQLite，安全边界是本机文件权限；P0 不做静态加密；
+- `reasoning_content` 为满足工具协议而明文保存在本地 SQLite；数据库文件会收紧为 `0600`，但 P0 不做静态加密；
+- 中断恢复会隔离未完成 run，不自动判断或补偿已经提交的外部副作用；
+- 工具 JSON Schema 校验只实现本项目声明使用的子集；
+- 无 trace 自动清理、数据保留周期、流式输出、取消协议或性能 SLA；
 - `var/` 与验收结果不提交。
 
 设计依据见 [SYSTEM_SKELETON.md](SYSTEM_SKELETON.md)，需求与验收口径见 [REQUIREMENTS_ANALYSIS.md](REQUIREMENTS_ANALYSIS.md)，开发中的提示和问题记录见 [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md) 与 [docs/PROBLEM_SOLVING.md](docs/PROBLEM_SOLVING.md)。
-

@@ -6,6 +6,7 @@ from .models import (
     Session,
     StoredMessage,
     Todo,
+    TodoStore,
     ToolCall,
     ToolContext,
     ToolResult,
@@ -21,10 +22,10 @@ __all__ = [
     "Session",
     "StoredMessage",
     "Todo",
+    "TodoStore",
     "ToolCall",
     "ToolContext",
     "ToolResult",
     "ToolSpec",
     "TraceEvent",
 ]
-

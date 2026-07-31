@@ -33,9 +33,20 @@ reasoning_content 只在 DeepSeek 工具协议需要时续传，
 ## 验收生成提示
 
 ```text
-不使用测试框架。通过可替换 ModelClient 的固定响应源构造 TC-01 至 TC-17；
+不使用测试框架。通过可替换 ModelClient 的固定响应源构造 TC-01 至 TC-20；
 每个场景使用临时 SQLite 数据库，输出预期、实际和 PASS/FAIL。
 真实 DeepSeek 冒烟单独执行，缺少凭据时安全跳过。
+```
+
+## P0 安全整改提示
+
+```text
+停止新增功能，按照 SECURITY_QUALITY_AUDIT.md 的 P0 顺序做最小整改：
+恢复并隔离 stale running run；移除 ToolContext 的数据库连接；
+摘要不得提升为 system 指令；给输入、context、工具和模型响应设置硬预算；
+最后一步不得执行工具副作用；限制 API Key 的 Base URL 出站目标；
+trace 不保存原始工具参数/结果；拒绝截断答案；收紧 SQLite 文件权限。
+新增回归必须继续使用固定模型和临时数据库，真实 API 证明保持独立。
 ```
 
 ## 人工检查点
@@ -46,4 +57,3 @@ reasoning_content 只在 DeepSeek 工具协议需要时续传，
 - run 终态只能从 `running` 写入一次；
 - trace 只能记录可公开决策和脱敏数据；
 - 真实 API 与固定模型验收不得混在一起。
-

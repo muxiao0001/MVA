@@ -8,7 +8,7 @@
 三条方案均满足：
 
 - Python CLI、本地运行；
-- 默认调用 `deepseek-v4-pro`，使用 OpenAI 兼容协议并开启 thinking；
+- 默认调用 `deepseek-v4-flash`，使用 OpenAI 兼容协议并开启 thinking；
 - Agent loop、工具调度、session、context 和 trace 自行实现；
 - 工具为 `calculator`、mock `search`、session 级 `todo`；
 - session 跨进程恢复；
@@ -188,7 +188,7 @@ Happy path 较简单，但为了达到当前验收要求，还需补充：
 
 推荐原因：
 
-1. **最贴合官方协议。** DeepSeek V4 Pro 已原生支持 Tool Calls，直接使用能减少输出格式漂移。
+1. **最贴合官方协议。** DeepSeek V4 Flash 已原生支持 Tool Calls，直接使用能减少输出格式漂移。
 2. **最贴合题目验收。** Agent loop、Schema、session、context、trace 都由项目自身完成且容易展示。
 3. **持久化更稳。** SQLite 比手写 JSON 文件更适合跨进程恢复、隔离和失败保护，同时仍保持本地单文件部署。
 4. **测试确定性较好。** 模型适配层和持久化层可分别替换，绝大多数异常用例不必依赖真实模型随机输出。

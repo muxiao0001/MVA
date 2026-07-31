@@ -3,6 +3,7 @@ from .repositories import (
     MessageRepository,
     RunRepository,
     SessionRepository,
+    SessionTodoStore,
     TodoRepository,
     TraceRepository,
 )
@@ -12,7 +13,7 @@ __all__ = [
     "MessageRepository",
     "RunRepository",
     "SessionRepository",
+    "SessionTodoStore",
     "TodoRepository",
     "TraceRepository",
 ]
-

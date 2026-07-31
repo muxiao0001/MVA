@@ -51,7 +51,10 @@ def run() -> str:
         storage_result = app.runtime.run(session.id, "注入存储失败")
         assert storage_result.status == "failed"
         assert storage_result.error_code == "storage_error"
-        assert app.runs.get(storage_result.run_id)["context_valid"] == 0
+        assert app.runs.get(
+            session.id,
+            storage_result.run_id,
+        )["context_valid"] == 0
 
         app.todos.add = original_add  # type: ignore[method-assign]
         model.script.append(direct_response("session 已恢复可用。"))

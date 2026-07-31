@@ -53,7 +53,11 @@ def interactive_chat(app: Application, session_id: str) -> None:
         if text == "/help":
             print("/exit 退出当前对话；每条普通文本都会启动一次 Agent run。")
             continue
-        result = app.runtime.run(session.id, text)
+        try:
+            result = app.runtime.run(session.id, text)
+        except MVAError as exc:
+            print(f"错误 [{exc.code}]：{exc.message}", file=sys.stderr)
+            continue
         print(present_run(result))
 
 
@@ -100,4 +104,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

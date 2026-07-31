@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,7 +30,16 @@ class Database:
 
     def initialize(self) -> None:
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            missing_directories: list[Path] = []
+            candidate = self.path.parent
+            while not candidate.exists():
+                missing_directories.append(candidate)
+                candidate = candidate.parent
+            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            for directory in reversed(missing_directories):
+                os.chmod(directory, 0o700)
+            if self.path.is_symlink():
+                raise StorageError("拒绝使用符号链接作为数据库文件")
             with self.transaction() as connection:
                 connection.executescript(SCHEMA_SQL)
                 row = connection.execute(
@@ -45,8 +55,12 @@ class Database:
                         "数据库 Schema 版本不兼容",
                         detail=f"expected={SCHEMA_VERSION}, actual={row['version']}",
                     )
+            os.chmod(self.path, 0o600)
         except OSError as exc:
-            raise StorageError("无法创建数据库目录", detail=str(exc)) from exc
+            raise StorageError(
+                "无法创建数据库或收紧文件权限",
+                detail=str(exc),
+            ) from exc
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -76,4 +90,3 @@ class Database:
             raise
         finally:
             connection.close()
-

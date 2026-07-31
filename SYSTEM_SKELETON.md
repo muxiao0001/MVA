@@ -125,7 +125,7 @@ minimum-viable-agent/
 | `Session` | `id`、`title?`、`summary?`、`compacted_through_seq`、时间戳、状态 | `id` 全局唯一；summary 仅属于该 session |
 | `StoredMessage` | `id`、`session_id`、`seq`、`role`、`content?`、`reasoning_content?`、`tool_calls?`、`tool_call_id?`、时间戳 | `(session_id, seq)` 有序；内部推理不可进入展示层 |
 | `Run` | `id`、`session_id`、状态、`step_count`、`stop_reason`、开始/结束时间、错误码 | 每次用户输入对应一个 run |
-| `ModelRequest` | 模型名、消息列表、工具 Schema、thinking 配置 | 不包含 API Key；消息必须满足 provider 格式 |
+| `ModelRequest` | 模型名、消息列表、工具 Schema、thinking 配置、输出 token 上限 | 不包含 API Key；消息必须满足 provider 格式 |
 | `ModelResponse` | `content?`、`reasoning_content?`、`tool_calls[]`、`finish_reason`、usage | 空答案和非法工具调用不能视为成功 |
 | `ToolSpec` | `name`、`description`、`parameters_schema` | 名称唯一；Schema 可验证 |
 | `ToolCall` | `id`、`name`、`arguments` | `id` 用于与结果配对 |
@@ -151,6 +151,8 @@ minimum-viable-agent/
 6. Context 压缩只处理已闭合的历史交互组，不拆分工具调用链。
 7. 原始 `reasoning_content` 可以为协议连续性保存在本地内部状态，但不得进入 CLI、普通 trace、README 或录屏。
 8. 决策摘要由 Runtime 根据动作类型生成，不从原始思维链截取。
+9. 固定 system prompt 不拼接历史摘要；摘要只能作为明确标注的非可信 `user` memory 消息。
+10. 最后一个模型步骤若仍请求工具，必须在执行任何工具副作用前以 `max_steps` 终止。
 
 ## 7. 主链路时序
 
@@ -216,7 +218,7 @@ Context 压缩在进入新的模型请求前判断；不得在一个尚未闭合
 - session 隔离同时覆盖消息、summary、内部模型状态、todo、run 和 trace。
 - Repository 层不提供“无 session 条件的业务查询”。
 - 测试和验收使用独立临时数据库，不接触真实运行数据。
-- `var/agent.db` 依赖本地操作系统文件权限；本项目不实现多用户权限系统。
+- 应用创建的状态目录使用 `0700`、SQLite 文件使用 `0600`；本项目不实现多用户权限系统。
 
 ### 8.3 明确边界
 
@@ -226,15 +228,15 @@ Context 压缩在进入新的模型请求前判断；不得在一个尚未闭合
 - search 是 mock，不具备实时性。
 - 不提供 Web、远程 API、多 Agent、RAG 或跨 session 用户记忆。
 
-## 9. 尚未完全锁定的边界
+## 9. 已锁定的实现决策与保留边界
 
-以下事项不阻塞模块编码，但在进入对应模块前需定值：
+P0 实现完成后，原待定项按以下口径落地：
 
-| 边界 | 当前约束 | 需要锁定的内容 |
+| 边界 | 已落地实现 | 保留限制 |
 |---|---|---|
-| Context 压缩 | 接口固定；只能压缩闭合历史组 | 使用 LLM 摘要还是规则摘要，以及失败回退行为 |
-| 容量预算 | 必须可配置并可在验收中稳定触发 | `max_steps`、压缩阈值、最近消息保留量的默认值 |
-| Mock 搜索数据 | 必须确定、可复现并标识 mock | fixture 主题、字段和查询匹配规则 |
-| 内部推理落盘 | 允许仅为协议连续性保存在本地 DB | 是否要求静态加密；当前 P0 仅依赖本地文件权限 |
-| 同 session 并发 | 当前不承诺并发写 | 若要求两个进程同时操作同一 session，需要追加并发控制设计 |
-| Trace 保留 | 必须脱敏且可复盘 | 保留周期和清理方式；当前本地 MVP 可不自动清理 |
+| Context 压缩 | 确定性规则摘要，只压缩闭合 run；摘要作为非可信 user memory；失败回滚。 | 字符/token 粗估和规则摘要不保证复杂语义无损。 |
+| 容量预算 | `max_steps=8`、压缩阈值 `12000`、hard context `64000`、最近保留 `4` 个 run；另有输入、工具、模型与 HTTP 硬预算。 | 默认值可由受信任的本机环境变量在校验范围内调整。 |
+| Mock 搜索数据 | 使用固定 fixture，所有结果明确标识 mock。 | 不提供实时联网搜索。 |
+| 内部推理落盘 | 仅为协议连续性存入本地 SQLite，文件 mode 为 `0600`。 | P0 不做静态加密。 |
+| 同 session 并发 | 新 run 前隔离 stale `running` run。 | 不承诺两个进程并发写同一 session，不自动补偿外部副作用。 |
+| Trace 保留 | 工具 trace 仅保存元数据，不复制参数与结果正文。 | 不自动清理，无数据保留周期。 |

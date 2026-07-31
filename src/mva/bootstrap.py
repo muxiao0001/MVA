@@ -41,6 +41,7 @@ def build_application(
     model_client: ModelClient | None = None,
     system_prompt: str | None = None,
 ) -> Application:
+    settings.validate()
     database = Database(settings.database_path)
     database.initialize()
 
@@ -53,7 +54,7 @@ def build_application(
     registry = ToolRegistry()
     registry.register(CalculatorTool())
     registry.register(MockSearchTool())
-    registry.register(TodoTool(todo_repository))
+    registry.register(TodoTool())
 
     context_builder = ContextBuilder(
         sessions=session_repository,
@@ -75,6 +76,8 @@ def build_application(
         timeout_seconds=settings.model_timeout_seconds,
         max_retries=settings.api_max_retries,
         retry_base_seconds=settings.api_retry_base_seconds,
+        allow_custom_base_url=settings.allow_custom_base_url,
+        max_response_bytes=settings.max_http_response_bytes,
     )
     trace = TraceRecorder(trace_repository, Redactor())
     runtime = AgentRuntime(
@@ -87,9 +90,17 @@ def build_application(
         sessions=session_repository,
         messages=message_repository,
         runs=run_repository,
+        todos=todo_repository,
         context_builder=context_builder,
         compactor=compactor,
         trace=trace,
+        max_user_input_chars=settings.max_user_input_chars,
+        hard_context_token_limit=settings.hard_context_token_limit,
+        max_tool_calls_per_response=settings.max_tool_calls_per_response,
+        max_tool_calls_per_run=settings.max_tool_calls_per_run,
+        max_tool_arguments_chars=settings.max_tool_arguments_chars,
+        max_model_output_tokens=settings.max_model_output_tokens,
+        max_model_output_chars=settings.max_model_output_chars,
     )
     return Application(
         settings=settings,
