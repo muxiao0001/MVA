@@ -20,7 +20,7 @@
 
 - 使用 Python、CLI、本地部署。
 - 不使用现有 Agent 框架完成核心 Runtime。
-- 默认模型为 `deepseek-v4-pro`，通过 OpenAI 兼容协议调用。
+- 默认模型为 `deepseek-v4-flash`，通过 OpenAI 兼容协议调用。
 - thinking 模式开启。
 - 原始 `reasoning_content` 只作为模型协议所需的内部上下文；不得展示给用户或写入普通日志。
 - 对外仅提供简短、可审计的决策摘要。
@@ -94,7 +94,7 @@ DeepSeek 的 Chat Completions API 是无状态的，多轮历史需要由客户�
 
 本项目采用以下基线：
 
-- 模型 ID：`deepseek-v4-pro`；
+- 模型 ID：`deepseek-v4-flash`；
 - Base URL：`https://api.deepseek.com`；
 - 协议：OpenAI Chat Completions 兼容格式；
 - thinking：开启；
@@ -116,7 +116,7 @@ DeepSeek 官方要求：thinking 模式发生工具调用时，相关 `reasoning
 | FR-03 | P0 | 模型返回一个或多个工具调用时，Agent 执行合法调用、追加结果并继续循环，直至最终回答。 |
 | FR-04 | P0 | 每个 run 必须受最大模型轮次约束；超限时停止，不再调用模型或工具，并显示“达到轮次上限”。具体默认值可配置且必须写入 README。 |
 | FR-05 | P0 | 必须解析并区分 `content`、`tool_calls`、`reasoning_content` 与结束原因；空内容、畸形参数或未知结构不得被当作成功。 |
-| FR-06 | P0 | 默认连接 `deepseek-v4-pro`；模型名、Base URL 和密钥由外部配置提供，其中模型与 Base URL 可有已声明的默认值，密钥不可有硬编码默认值。 |
+| FR-06 | P0 | 默认连接 `deepseek-v4-flash`；模型名、Base URL 和密钥由外部配置提供，其中模型与 Base URL 可有已声明的默认值，密钥不可有硬编码默认值。 |
 | FR-07 | P0 | 原始 `reasoning_content` 不向用户输出、不进入普通 trace；如协议要求续传，只能作为内部 session 状态使用。 |
 | FR-08 | P0 | 每一步对外产生简短决策摘要，只说明“直接回答、调用何种工具、继续或结束”及结果状态，不复述私有推理。 |
 
@@ -199,6 +199,9 @@ DeepSeek 官方要求：thinking 模式发生工具调用时，相关 `reasoning
 | TC-15 工具消息完整性 | 压缩或恢复后，tool call 与 tool result 保持配对，不触发协议错误。 |
 | TC-16 推理隐私 | CLI、普通日志和 trace 中均不存在原始 `reasoning_content`。 |
 | TC-17 Trace 完整性 | 一次工具 run 可由 session ID、run ID 和步骤记录完整复盘。 |
+| TC-18 中断 Run 恢复 | 遗留 `running` run 在下一次对话前被隔离，session 可继续使用。 |
+| TC-19 安全边界 | 工具最小能力、run/session 归属、Base URL、trace 内容和 SQLite 权限满足 P0。 |
+| TC-20 预算与终止语义 | 输入、context、工具、模型/HTTP 响应预算和截断终止均硬性生效。 |
 
 ## 10. 录屏最小演示路径
 
@@ -234,9 +237,9 @@ DeepSeek 官方要求：thinking 模式发生工具调用时，相关 `reasoning
 只有同时满足以下条件才算完成：
 
 - 所有 P0 功能需求均有可运行证据；
-- TC-01 至 TC-17 均执行、记录结果并通过；
+- TC-01 至 TC-20 均执行、记录结果并通过；
 - 核心 Runtime 未借用现成 Agent 框架；
-- 使用 `deepseek-v4-pro` 真实 API 跑通直接回答、工具调用及多轮追问；
+- 使用 `deepseek-v4-flash` 真实 API 跑通直接回答、工具调用及多轮追问；
 - session 隔离、跨进程恢复和 context 压缩通过验收；
 - 原始推理和 API Key 未出现在用户输出、普通日志或提交内容中；
 - 录屏、README、代码链接、Prompt/问题记录齐全，评审者能按 README 复现。
