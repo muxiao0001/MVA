@@ -214,4 +214,7 @@ python acceptance/real_api_smoke.py
 - 无 trace 自动清理、数据保留周期、流式输出、取消协议或性能 SLA；
 - `.env`、`var/` 与验收结果不提交。
 
-设计依据见 [SYSTEM_SKELETON.md](SYSTEM_SKELETON.md)，需求与验收口径见 [REQUIREMENTS_ANALYSIS.md](REQUIREMENTS_ANALYSIS.md)，开发中的提示和问题记录见 [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md) 与 [docs/PROBLEM_SOLVING.md](docs/PROBLEM_SOLVING.md)。
+## 交付内容
+
+开发中的提示和问题记录见 [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md) 与 [docs/PROBLEM_SOLVING.md](docs/PROBLEM_SOLVING.md)。
+录屏网盘链接： https://pan.baidu.com/s/1owyuEHZTfe6CaJtZkFjvXw?pwd=q8dn 提取码: q8dn 
