@@ -88,5 +88,10 @@
 
 - `python -m compileall -q src acceptance`：通过；
 - `python acceptance/run_all.py`：TC-01 至 TC-20 全部通过；
+- TC-04 使用两个独立 Python 进程验证退出后恢复；TC-14 实际执行压缩后的早期事实追问；
 - CLI session 创建、列表和恢复入口：通过；
-- 真实 API 冒烟：脚本已提供并覆盖直接回答、calculator 与工具型追问；只有存在 `DEEPSEEK_API_KEY` 时执行，否则安全跳过。
+- HTTP Adapter 的 503 有限重试与 401 不重试通过确定性故障注入；
+- 工具参数的 Schema、非标准 JSON 常量与 64 层嵌套上限均通过；
+- 真实 API 冒烟：`deepseek-v4-flash` 的直接回答、calculator、工具型追问和 `search → todo` 全部通过；
+- `.env` mode 为 `0600`、被 Git 忽略，当前 API Key 未出现在任何 Git 跟踪文件中；
+- 真实 API 脱敏证据见 `docs/REAL_API_TEST_EVIDENCE.md`。

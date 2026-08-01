@@ -24,17 +24,32 @@ _ERROR_HINTS = {
 }
 
 
+def sanitize_terminal_text(value: object) -> str:
+    """Remove terminal control characters while preserving line layout."""
+
+    text = str(value)
+    return "".join(
+        character
+        for character in text
+        if character in {"\n", "\t"}
+        or (ord(character) >= 32 and not 127 <= ord(character) <= 159)
+    )
+
+
 def present_run(result: RunResult) -> str:
-    lines = [f"[run {result.run_id}]"]
-    lines.extend(f"[决策] {item}" for item in result.decision_summaries)
+    lines = [f"[run {sanitize_terminal_text(result.run_id)}]"]
+    lines.extend(
+        f"[决策] {sanitize_terminal_text(item)}"
+        for item in result.decision_summaries
+    )
     if result.answer is not None:
-        lines.append(result.answer)
+        lines.append(sanitize_terminal_text(result.answer))
     else:
         hint = _ERROR_HINTS.get(
             result.error_code or "",
             f"任务未完成：{result.stop_reason}",
         )
-        lines.append(f"[错误] {hint}")
+        lines.append(f"[错误] {sanitize_terminal_text(hint)}")
     return "\n".join(lines)
 
 
@@ -44,8 +59,10 @@ def present_sessions(sessions: Iterable[Session]) -> str:
         return "暂无可恢复 session。"
     lines = ["SESSION_ID        UPDATED                         TITLE"]
     for session in items:
-        title = session.title or "-"
-        lines.append(f"{session.id:<17} {session.updated_at:<31} {title}")
+        session_id = sanitize_terminal_text(session.id)
+        updated_at = sanitize_terminal_text(session.updated_at)
+        title = sanitize_terminal_text(session.title or "-")
+        lines.append(f"{session_id:<17} {updated_at:<31} {title}")
     return "\n".join(lines)
 
 
@@ -53,6 +70,8 @@ def present_traces(events: list[dict]) -> str:
     if not events:
         return "没有匹配的 trace。"
     return "\n".join(
-        json.dumps(event, ensure_ascii=False, sort_keys=True)
+        sanitize_terminal_text(
+            json.dumps(event, ensure_ascii=False, sort_keys=True)
+        )
         for event in events
     )

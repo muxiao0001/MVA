@@ -40,6 +40,17 @@ class Database:
                 os.chmod(directory, 0o700)
             if self.path.is_symlink():
                 raise StorageError("拒绝使用符号链接作为数据库文件")
+            if self.path.exists():
+                if not self.path.is_file():
+                    raise StorageError("数据库路径必须是普通文件")
+                os.chmod(self.path, 0o600)
+            else:
+                descriptor = os.open(
+                    self.path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+                os.close(descriptor)
             with self.transaction() as connection:
                 connection.executescript(SCHEMA_SQL)
                 row = connection.execute(

@@ -7,7 +7,12 @@ from collections.abc import Sequence
 from ..bootstrap import Application, build_application
 from ..config import Settings
 from ..errors import MVAError
-from .presenter import present_run, present_sessions, present_traces
+from .presenter import (
+    present_run,
+    present_sessions,
+    present_traces,
+    sanitize_terminal_text,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,7 +61,11 @@ def interactive_chat(app: Application, session_id: str) -> None:
         try:
             result = app.runtime.run(session.id, text)
         except MVAError as exc:
-            print(f"错误 [{exc.code}]：{exc.message}", file=sys.stderr)
+            print(
+                f"错误 [{sanitize_terminal_text(exc.code)}]："
+                f"{sanitize_terminal_text(exc.message)}",
+                file=sys.stderr,
+            )
             continue
         print(present_run(result))
 
@@ -95,10 +104,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         interactive_chat(app, session.id)
         return 0
     except MVAError as exc:
-        print(f"错误 [{exc.code}]：{exc.message}", file=sys.stderr)
+        print(
+            f"错误 [{sanitize_terminal_text(exc.code)}]："
+            f"{sanitize_terminal_text(exc.message)}",
+            file=sys.stderr,
+        )
         return 2
     except ValueError as exc:
-        print(f"错误：{exc}", file=sys.stderr)
+        print(f"错误：{sanitize_terminal_text(exc)}", file=sys.stderr)
         return 2
 
 

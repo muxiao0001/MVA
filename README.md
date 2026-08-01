@@ -2,6 +2,8 @@
 
 一个不依赖现有 Agent 框架的本地 CLI Agent。项目自行实现有限循环、原生 Tool Calls 调度、session/context、SQLite 持久化、基础压缩、异常分类和脱敏 trace；模型适配器调用真实 DeepSeek OpenAI 兼容 API。
 
+代码仓库：[muxiao0001/MVA](https://github.com/muxiao0001/MVA)。提交或演示前应确认本地当前修改已经 commit 并 push 到该链接。
+
 ## 已实现能力
 
 - 自建 Agent loop：直接回答、单工具、多工具连续调用，最多 8 次模型调用；最后一个步骤不会再执行工具副作用；
@@ -30,15 +32,18 @@ python -m pip install -e .
 export PYTHONPATH=src
 ```
 
-复制配置示例并在 shell 中导出真实密钥；项目不会自动读取 `.env`，避免无意加载错误文件：
+复制配置示例、收紧权限并在当前 shell 中加载。项目不会自动读取 `.env`，避免无意加载错误文件：
 
 ```bash
-export DEEPSEEK_API_KEY='your-key'
-export DEEPSEEK_BASE_URL='https://api.deepseek.com'
-export DEEPSEEK_MODEL='deepseek-v4-flash'
+cp .env.example .env
+chmod 600 .env
+# 编辑 .env，填入 DEEPSEEK_API_KEY
+set -a
+source .env
+set +a
 ```
 
-不要提交 `.env`、数据库或真实 API Key。
+`.env` 只应包含受信任的 shell 变量赋值。不要提交 `.env`、数据库或真实 API Key。
 
 默认只允许 `https://api.deepseek.com` 接收 API Key。确需使用兼容代理时，必须同时设置 `MVA_ALLOW_CUSTOM_BASE_URL=true`；自定义地址仍强制 HTTPS，且不得包含 URL 凭据、query 或 fragment。
 
@@ -137,7 +142,7 @@ export MVA_CONTEXT_RETAIN_RUNS=2
 
 ## Trace 与异常
 
-Trace 至少包含 run/session ID、步骤、事件类型、工具名、状态、耗时、错误类型和终止原因。工具事件只记录 call ID 的短哈希、参数/结果长度与成功状态，不保存原始参数或结果；模型的私有推理不会进入 CLI 或 trace。
+Trace 至少包含 run/session ID、步骤、事件类型、工具名、状态、耗时、错误类型和终止原因。工具事件只记录 call ID 的短哈希、参数/结果长度与成功状态，不保存原始参数或结果；模型的私有推理不会进入 CLI 或 trace。CLI 展示层会移除终端控制字符，避免模型答案或 session 标题触发 ANSI/OSC 控制行为。
 
 API 错误被分类为配置、鉴权、余额、限流、请求、响应过大和服务错误。429/500/502/503/504 与网络失败最多自动重试 2 次，退避为 1.2s、2.4s；400/401/402/422 等不可恢复请求不会反复重试。`finish_reason=length` 不会被当作成功答案。
 
@@ -157,7 +162,9 @@ python acceptance/run_all.py
 python acceptance/real_api_smoke.py
 ```
 
-未设置 `DEEPSEEK_API_KEY` 时脚本安全跳过；设置后会用当前配置的模型验证直接回答、模型自主 calculator 工具链和一次带历史工具结果的工具型追问。脚本使用临时 `0600` SQLite 数据库，不打印密钥。
+未设置 `DEEPSEEK_API_KEY` 时脚本安全跳过；设置后会用当前配置的模型验证直接回答、模型自主 calculator、带历史工具结果的工具型追问，以及 `search → todo` 真实多工具链。脚本使用临时 `0600` SQLite 数据库，不打印密钥，并将不含回答正文和秘密的结果写入 `acceptance/results/real_api_latest.json`。
+
+2026-07-31 的真实执行记录见 [真实 API 验证记录](docs/REAL_API_TEST_EVIDENCE.md)。
 
 ## 录屏建议
 
@@ -205,6 +212,6 @@ python acceptance/real_api_smoke.py
 - 中断恢复会隔离未完成 run，不自动判断或补偿已经提交的外部副作用；
 - 工具 JSON Schema 校验只实现本项目声明使用的子集；
 - 无 trace 自动清理、数据保留周期、流式输出、取消协议或性能 SLA；
-- `var/` 与验收结果不提交。
+- `.env`、`var/` 与验收结果不提交。
 
 设计依据见 [SYSTEM_SKELETON.md](SYSTEM_SKELETON.md)，需求与验收口径见 [REQUIREMENTS_ANALYSIS.md](REQUIREMENTS_ANALYSIS.md)，开发中的提示和问题记录见 [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md) 与 [docs/PROBLEM_SOLVING.md](docs/PROBLEM_SOLVING.md)。

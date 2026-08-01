@@ -39,14 +39,26 @@ class ToolRegistry:
             )
 
         try:
-            arguments = json.loads(call.arguments)
-        except json.JSONDecodeError as exc:
+            arguments = json.loads(
+                call.arguments,
+                parse_constant=self._reject_non_standard_constant,
+            )
+        except (json.JSONDecodeError, RecursionError, ValueError) as exc:
+            detail = getattr(exc, "msg", type(exc).__name__)
             return ToolResult(
                 tool_call_id=call.id,
                 tool_name=call.name,
                 ok=False,
                 error_type="invalid_json",
-                error_message=f"工具参数不是合法 JSON: {exc.msg}",
+                error_message=f"工具参数不是合法 JSON: {detail}",
+            )
+        if self._exceeds_json_depth(arguments):
+            return ToolResult(
+                tool_call_id=call.id,
+                tool_name=call.name,
+                ok=False,
+                error_type="invalid_json",
+                error_message="工具参数 JSON 嵌套层级超过 64",
             )
         if not isinstance(arguments, dict):
             return ToolResult(
@@ -89,6 +101,23 @@ class ToolRegistry:
                 error_message="工具返回的调用标识不匹配",
             )
         return result
+
+    @staticmethod
+    def _reject_non_standard_constant(value: str) -> None:
+        raise ValueError(f"不允许非标准 JSON 常量: {value}")
+
+    @staticmethod
+    def _exceeds_json_depth(value: Any, maximum: int = 64) -> bool:
+        stack: list[tuple[Any, int]] = [(value, 1)]
+        while stack:
+            item, depth = stack.pop()
+            if depth > maximum:
+                return True
+            if isinstance(item, dict):
+                stack.extend((child, depth + 1) for child in item.values())
+            elif isinstance(item, list):
+                stack.extend((child, depth + 1) for child in item)
+        return False
 
 
 def validate_schema(value: Any, schema: dict[str, Any], path: str = "$") -> None:

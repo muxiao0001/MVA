@@ -3,11 +3,24 @@ from acceptance.fixtures import ScenarioEnvironment, direct_response
 NAME = "TC-14 Context 压缩"
 
 
+def _answer_from_compressed_memory(request):
+    memory = str(request.messages[0].get("content"))
+    assert "<untrusted_session_memory>" in memory
+    assert "蓝鲸-0" in memory
+    return direct_response("最早记录的长期代号是蓝鲸-0。")
+
+
 def run() -> str:
     env = ScenarioEnvironment()
     try:
         app, model = env.app(
-            [direct_response(f"已记住事实 {index}。") for index in range(6)],
+            [
+                *(
+                    direct_response(f"已记住事实 {index}。")
+                    for index in range(6)
+                ),
+                _answer_from_compressed_memory,
+            ],
             context_token_threshold=100,
             context_retain_runs=2,
         )
@@ -47,11 +60,14 @@ def run() -> str:
             request.system_prompt == model.requests[0].system_prompt
             for request in model.requests
         )
+        recalled = app.runtime.run(session.id, "我最早记录的长期代号是什么？")
+        assert recalled.status == "succeeded"
+        assert "蓝鲸-0" in (recalled.answer or "")
         events = app.traces.list(session_id=session.id)
         assert any(event["event_type"] == "context_compacted" for event in events)
         return (
             f"压缩游标推进到 seq={restored.compacted_through_seq}，"
-            "早期事实进入滚动摘要。"
+            "早期事实进入滚动摘要并可用于后续回答。"
         )
     finally:
         env.close()

@@ -2,8 +2,16 @@ import json
 import stat
 from typing import Any
 
-from mva.domain.models import ModelResponse, ToolContext, ToolResult, ToolSpec
-from mva.errors import ConfigurationError, StorageError
+from mva.cli.presenter import present_run, present_sessions, present_traces
+from mva.domain.models import (
+    ModelResponse,
+    RunResult,
+    Session,
+    ToolContext,
+    ToolResult,
+    ToolSpec,
+)
+from mva.errors import ConfigurationError, InputValidationError, StorageError
 from mva.model.deepseek import DeepSeekClient
 from mva.storage.database import Database
 from mva.tools.base import Tool
@@ -157,6 +165,44 @@ def run() -> str:
             allow_custom_base_url=True,
         )
         assert custom.base_url == "https://proxy.example"
+
+        for unsafe_title in ("danger\x1b[2J", "x" * 201):
+            try:
+                app.sessions.create(unsafe_title)
+            except InputValidationError:
+                pass
+            else:
+                raise AssertionError("不安全的 session 标题未被拒绝")
+
+        rendered_run = present_run(
+            RunResult(
+                status="succeeded",
+                run_id="run_safe",
+                session_id=session.id,
+                answer="answer\x1b[2J\x07",
+                stop_reason="final_answer",
+                decision_summaries=("decision\x1b]0;unsafe\x07",),
+            )
+        )
+        rendered_sessions = present_sessions(
+            [
+                Session(
+                    id=session.id,
+                    title="title\x1b[2J",
+                    summary=None,
+                    compacted_through_seq=0,
+                    created_at="now",
+                    updated_at="now",
+                )
+            ]
+        )
+        rendered_traces = present_traces(
+            [{"payload": {"text": "trace\x1b[2J\x07"}}]
+        )
+        assert not any(
+            ord(character) < 32 and character not in {"\n", "\t"}
+            for character in rendered_run + rendered_sessions + rendered_traces
+        )
         assert len(model.requests) == 4
         return "最小工具能力、session 约束、秘密出站和文件权限均生效。"
     finally:

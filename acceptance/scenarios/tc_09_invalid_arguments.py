@@ -1,5 +1,7 @@
 import json
 
+from mva.domain.models import ToolCall, ToolContext
+
 from acceptance.fixtures import (
     ScenarioEnvironment,
     direct_response,
@@ -32,7 +34,25 @@ def run() -> str:
         payload = json.loads(tool_message.content or "{}")
         assert payload["ok"] is False
         assert payload["error"]["type"] == "tool_validation_error"
-        return "Schema 拒绝错误类型，失败结果回传模型后有限结束。"
+
+        for call in (
+            ToolCall(
+                id="call_nan",
+                name="calculator",
+                arguments='{"expression":NaN}',
+            ),
+            ToolCall(
+                id="call_deep_json",
+                name="calculator",
+                arguments="[" * 1_100 + "]" * 1_100,
+            ),
+        ):
+            rejected = app.registry.invoke(
+                call,
+                ToolContext(session_id=session.id, run_id=result.run_id),
+            )
+            assert rejected.ok is False
+            assert rejected.error_type == "invalid_json"
+        return "Schema、NaN 与过深 JSON 均被拒绝，并可控回传模型。"
     finally:
         env.close()
-
