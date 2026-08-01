@@ -209,3 +209,4 @@ python acceptance/real_api_smoke.py
 
 开发中的提示和问题记录见 [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md) 与 [docs/PROBLEM_SOLVING.md](docs/PROBLEM_SOLVING.md)。
 录屏网盘链接： https://pan.baidu.com/s/1owyuEHZTfe6CaJtZkFjvXw?pwd=q8dn 提取码: q8dn 
+架构设计题见 [./Agent架构设计题.md](./Agent架构设计题.md)
