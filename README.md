@@ -2,7 +2,6 @@
 
 一个不依赖现有 Agent 框架的本地 CLI Agent。项目自行实现有限循环、原生 Tool Calls 调度、session/context、SQLite 持久化、基础压缩、异常分类和脱敏 trace；模型适配器调用真实 DeepSeek OpenAI 兼容 API。
 
-代码仓库：[muxiao0001/MVA](https://github.com/muxiao0001/MVA)。提交或演示前应确认本地当前修改已经 commit 并 push 到该链接。
 
 ## 已实现能力
 
@@ -19,7 +18,7 @@
 
 ## 环境与安装
 
-要求 Python 3.11+。仓库约定使用 Conda 的 `MVA` 环境：
+要求 Python 3.11+，没有使用外部依赖。仓库本地使用 Conda 的 `MVA` 环境：
 
 ```bash
 conda activate MVA
@@ -164,17 +163,9 @@ python acceptance/real_api_smoke.py
 
 未设置 `DEEPSEEK_API_KEY` 时脚本安全跳过；设置后会用当前配置的模型验证直接回答、模型自主 calculator、带历史工具结果的工具型追问，以及 `search → todo` 真实多工具链。脚本使用临时 `0600` SQLite 数据库，不打印密钥，并将不含回答正文和秘密的结果写入 `acceptance/results/real_api_latest.json`。
 
-2026-07-31 的真实执行记录见 [真实 API 验证记录](docs/REAL_API_TEST_EVIDENCE.md)。
+2026-08-01 的真实执行记录见 [真实 API 验证记录](docs/REAL_API_TEST_EVIDENCE.md)。
 
-## 录屏建议
 
-1. 运行真实 API 冒烟；
-2. 创建 session，演示直接回答、calculator、search → todo；
-3. 创建 A/B 两个 session，分别写入 todo 并展示隔离；
-4. 退出后重新启动，恢复一个 session；
-5. 调低压缩阈值，连续对话后追问早期事实；
-6. 展示缺失密钥或非法计算，以及对应 `traces`；
-7. 运行 `python acceptance/run_all.py` 展示 20/20。
 
 ## 配置项
 
